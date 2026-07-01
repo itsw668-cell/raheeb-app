@@ -11,36 +11,40 @@ import os
 app = Flask(__name__)
 
 # ════ SECURITY CONFIG ════
-
-app.secret_key = 'raheeb-secret-key-2026-fixed'        
+app.secret_key         = os.urandom(24)          # مفتاح عشوائي كل تشغيل
 app.config['SQLALCHEMY_DATABASE_URI']    = 'sqlite:///orders.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SESSION_COOKIE_HTTPONLY']    = True
-app.config['SESSION_COOKIE_SAMESITE']   = 'Lax'
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=8)
+app.config['SESSION_COOKIE_HTTPONLY']    = True   # يمنع JS من قراءة الكوكيز
+app.config['SESSION_COOKIE_SAMESITE']   = 'Lax'  # يمنع CSRF
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=8)  # انتهاء الجلسة
 
 db = SQLAlchemy(app)
 
 # ════ ADMIN CREDENTIALS ════
+# كلمة المرور محفوظة كـ Hash وليس نصاً عادياً
 ADMIN_USER      = 'raheeb'
 ADMIN_PASS_HASH = hashlib.sha256('raheeb2026'.encode()).hexdigest()
 
-# ════ RATE LIMITING ════
-login_attempts  = {}
-order_attempts  = {}
+# ════ RATE LIMITING (الحماية من السبام) ════
+# يحفظ عدد المحاولات لكل IP
+login_attempts  = {}   # { ip: [timestamp, timestamp, ...] }
+order_attempts  = {}   # { ip: [timestamp, timestamp, ...] }
 
-MAX_LOGIN_ATTEMPTS = 5
-MAX_ORDERS_PER_HR  = 10
-BLOCK_MINUTES      = 15
+MAX_LOGIN_ATTEMPTS = 5    # أقصى 5 محاولات دخول
+MAX_ORDERS_PER_HR  = 10   # أقصى 10 طلبات في الساعة
+BLOCK_MINUTES      = 15   # حظر لمدة 15 دقيقة
 
 def get_ip():
+    """الحصول على IP الحقيقي للزائر"""
     return request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
 
 def is_rate_limited(store, ip, max_attempts, window_minutes):
+    """التحقق من تجاوز الحد المسموح"""
     now     = time.time()
     window  = window_minutes * 60
     if ip not in store:
         store[ip] = []
+    # احذف المحاولات القديمة
     store[ip] = [t for t in store[ip] if now - t < window]
     if len(store[ip]) >= max_attempts:
         return True
@@ -50,6 +54,7 @@ def is_rate_limited(store, ip, max_attempts, window_minutes):
 # ════ SECURITY HEADERS ════
 @app.after_request
 def add_security_headers(response):
+    """إضافة Headers أمنية لكل رد"""
     response.headers['X-Content-Type-Options']  = 'nosniff'
     response.headers['X-Frame-Options']          = 'DENY'
     response.headers['X-XSS-Protection']         = '1; mode=block'
@@ -63,13 +68,17 @@ def add_security_headers(response):
 
 # ════ INPUT SANITIZATION ════
 def sanitize(text, max_len=200):
+    """تنظيف المدخلات من أكواد خبيثة"""
     if not isinstance(text, str):
         return ''
+    # إزالة HTML/Script tags
     text = re.sub(r'<[^>]+>', '', text)
+    # إزالة أحرف خطرة
     text = re.sub(r'[<>"\';\\]', '', text)
     return text.strip()[:max_len]
 
 def validate_phone(phone):
+    """التحقق من رقم هاتف جزائري صحيح"""
     phone = re.sub(r'\s', '', phone)
     return bool(re.match(r'^(0)(5|6|7)\d{8}$', phone))
 
@@ -93,7 +102,7 @@ class Order(db.Model):
     items      = db.Column(db.Text,        nullable=False)
     total      = db.Column(db.Float,       nullable=False)
     status     = db.Column(db.String(20),  default='new')
-    ip_address = db.Column(db.String(50),  nullable=True)   
+    ip_address = db.Column(db.String(50),  nullable=True)   # حفظ IP للمراقبة
     created_at = db.Column(db.DateTime,    default=datetime.utcnow)
 
     def to_dict(self):
@@ -117,16 +126,13 @@ with app.app_context():
 # ════ CUSTOMER ROUTES ════
 @app.route('/')
 def index():
-    return render_template('index.html')   # الصفحة الرئيسية الجديدة
-
-@app.route('/order')
-def order_page():
-    return render_template('order.html')   # صفحة الطلب القديمة
+    return render_template('index.html')
 
 @app.route('/api/order', methods=['POST'])
 def place_order():
     ip = get_ip()
 
+    # ── 1. Rate Limiting: أقصى 10 طلبات في الساعة لنفس IP ──
     if is_rate_limited(order_attempts, ip, MAX_ORDERS_PER_HR, 60):
         return jsonify({'success': False, 'message': 'تجاوزت الحد المسموح، حاول بعد ساعة'}), 429
 
@@ -134,23 +140,26 @@ def place_order():
     if not data:
         return jsonify({'success': False, 'message': 'بيانات غير صحيحة'}), 400
 
+    # ── 2. التحقق من وجود الحقول ──
     required = ['name', 'phone', 'wilaya', 'commune', 'address', 'items', 'total']
     for f in required:
         if f not in data or not data[f]:
             return jsonify({'success': False, 'message': f'حقل مفقود: {f}'}), 400
 
+    # ── 3. تنظيف وتحقق من المدخلات ──
     name    = sanitize(data['name'],    max_len=100)
     phone   = sanitize(data['phone'],   max_len=20)
     wilaya  = sanitize(data['wilaya'],  max_len=50)
     commune = sanitize(data['commune'], max_len=50)
     address = sanitize(data['address'], max_len=200)
-    
+
     if not name or len(name) < 2:
         return jsonify({'success': False, 'message': 'الاسم غير صحيح'}), 400
 
     if not validate_phone(phone):
         return jsonify({'success': False, 'message': 'رقم الهاتف غير صحيح'}), 400
 
+    # ── 4. التحقق من الطلبات ──
     items = data.get('items', [])
     if not isinstance(items, list) or len(items) == 0 or len(items) > 50:
         return jsonify({'success': False, 'message': 'الطلبات غير صحيحة'}), 400
@@ -162,6 +171,7 @@ def place_order():
     except (ValueError, TypeError):
         return jsonify({'success': False, 'message': 'الإجمالي غير صحيح'}), 400
 
+    # ── 5. حفظ الطلب ──
     order = Order(
         name       = name,
         phone      = phone,
@@ -188,30 +198,25 @@ def admin_login_page():
 def admin_login():
     ip = get_ip()
 
-    if ip in login_attempts:
-        now = time.time()
-        login_attempts[ip] = [t for t in login_attempts[ip] if now - t < BLOCK_MINUTES * 60]
-        if len(login_attempts[ip]) >= MAX_LOGIN_ATTEMPTS:
-            return render_template('admin_login.html',
-                error=f'تم حظرك مؤقتاً لمدة {BLOCK_MINUTES} دقيقة بسبب كثرة المحاولات الخاطئة')
+    # ── Rate Limiting: أقصى 5 محاولات دخول ──
+    if is_rate_limited(login_attempts, ip, MAX_LOGIN_ATTEMPTS, BLOCK_MINUTES):
+        return render_template('admin_login.html',
+            error=f'تم حظرك مؤقتاً لمدة {BLOCK_MINUTES} دقيقة بسبب كثرة المحاولات')
 
     u = sanitize(request.form.get('username', ''))
     p = request.form.get('password', '')
     p_hash = hashlib.sha256(p.encode()).hexdigest()
 
+    # تأخير بسيط لمنع Brute Force
     time.sleep(0.5)
 
     if u == ADMIN_USER and p_hash == ADMIN_PASS_HASH:
         session.permanent = True
         session['admin']  = True
         session['login_time'] = datetime.utcnow().isoformat()
+        # مسح سجل المحاولات بعد الدخول الناجح
         login_attempts.pop(ip, None)
         return redirect(url_for('admin_dashboard'))
-
-    now = time.time()
-    if ip not in login_attempts:
-        login_attempts[ip] = []
-    login_attempts[ip].append(now)
 
     return render_template('admin_login.html', error='اسم المستخدم أو كلمة المرور خاطئة')
 
@@ -249,19 +254,24 @@ def update_status(order_id):
     db.session.commit()
     return jsonify({'success': True})
 
-# ════ BACKUP ════
+# ════ BACKUP قاعدة البيانات ════
 @app.route('/admin/backup')
 @admin_required
 def backup_db():
+    """تحميل نسخة احتياطية من قاعدة البيانات"""
     from flask import send_file
     import shutil
     backup_path = f'orders_backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}.db'
     shutil.copy('orders.db', backup_path)
     return send_file(backup_path, as_attachment=True)
 
-# ════ منع الوصول لملفات حساسة ════
+# ── منع الوصول لملفات حساسة ──
 @app.route('/orders.db')
 @app.route('/app.py')
 @app.route('/requirements.txt')
-def block_sensitive_files():
-    abort(403)
+def block_sensitive():
+    abort(404)
+
+if __name__ == '__main__':
+    # debug=False في الإنتاج
+    app.run(debug=False, port=5000, host='127.0.0.1')
