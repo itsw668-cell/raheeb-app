@@ -22,7 +22,7 @@ db = SQLAlchemy(app)
 
 # ════ ADMIN CREDENTIALS ════
 # كلمة المرور محفوظة كـ Hash وليس نصاً عادياً
-ADMIN_USER      = 'raheeb'
+ADMIN_USER      = '2026raheeb'
 ADMIN_PASS_HASH = hashlib.sha256('raheeb2026'.encode()).hexdigest()
 
 # ════ RATE LIMITING (الحماية من السبام) ════
@@ -274,4 +274,4 @@ def block_sensitive():
 
 if __name__ == '__main__':
     # debug=False في الإنتاج
-    app.run(debug=False, port=5000, host='127.0.0.1')
+    app.run(debug=False, port=5000, host='0.0.0.0')
