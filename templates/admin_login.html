@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>لوحة التحكم — رهيب</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&family=Oswald:wght@700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Cairo',sans-serif;background:linear-gradient(135deg,#06060F,#0A0820);min-height:100vh;display:flex;align-items:center;justify-content:center;color:#eee}
+.login-box{background:#111;border:1px solid rgba(255,255,255,.07);border-radius:16px;padding:40px;width:min(400px,95vw);box-shadow:0 20px 60px rgba(0,0,0,.5)}
+.login-logo{text-align:center;margin-bottom:30px}
+.login-logo h1{font-family:'Oswald',sans-serif;font-size:2rem;color:#F5C518;letter-spacing:3px}
+.login-logo p{color:#555;font-size:.85rem;margin-top:6px}
+.form-group{margin-bottom:18px}
+.form-group label{display:block;font-size:.8rem;color:#666;font-weight:700;margin-bottom:7px;text-transform:uppercase;letter-spacing:.5px}
+.form-group input{width:100%;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:#fff;padding:12px 14px;border-radius:8px;font-family:'Cairo',sans-serif;font-size:.95rem;outline:none;transition:border .2s}
+.form-group input:focus{border-color:#C0191F}
+.login-btn{width:100%;background:#C0191F;color:#fff;border:none;padding:14px;border-radius:8px;font-size:1rem;font-weight:700;font-family:'Cairo',sans-serif;cursor:pointer;transition:all .3s;box-shadow:0 0 20px rgba(192,25,31,.3)}
+.login-btn:hover{background:#8B0000;transform:translateY(-1px)}
+.error{background:rgba(192,25,31,.12);border:1px solid rgba(192,25,31,.35);color:#ff6b6b;padding:10px 14px;border-radius:8px;font-size:.88rem;margin-bottom:18px;text-align:center}
+</style>
+</head>
+<body>
+<div class="login-box">
+  <div class="login-logo">
+    <h1>🍔 RAHEEB</h1>
+    <p>لوحة تحكم الطلبات</p>
+  </div>
+  {% if error %}
+  <div class="error">{{ error }}</div>
+  {% endif %}
+  <form method="POST" action="/admin/login">
+    <div class="form-group">
+      <label>اسم المستخدم</label>
+      <input type="text" name="username" required placeholder="admin" autocomplete="username">
+    </div>
+    <div class="form-group">
+      <label>كلمة المرور</label>
+      <input type="password" name="password" required placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button type="submit" class="login-btn">🔐 دخول</button>
+  </form>
+</div>
+</body>
+</html>
